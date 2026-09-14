@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="description" content="A dark, responsive Roblox-inspired game dashboard.">
+  <title>Playground — Discover</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-gate">
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#home" aria-label="Playground home">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span class="brand-word">PLAYGROUND</span>
+      </a>
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation" aria-expanded="false"><svg><use href="#icon-menu"></use></svg></button>
+      <div class="search-wrap">
+        <svg class="search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input id="globalSearch" type="search" autocomplete="off" placeholder="Search" aria-label="Search experiences, people, and more">
+        <kbd>/</kbd>
+      </div>
+      <nav class="top-actions" aria-label="Account actions">
+        <button class="auth-header-button" id="authHeaderButton">Sign in</button>
+        <button class="icon-button has-dot" id="notificationsBtn" aria-label="Notifications"><svg><use href="#icon-bell"></use></svg><span class="notification-dot"></span></button>
+        <button class="icon-button" id="messagesBtn" aria-label="Messages"><svg><use href="#icon-message"></use></svg></button>
+        <button class="profile-trigger" id="profileTrigger" aria-expanded="false" aria-haspopup="true">
+          <span class="avatar avatar-blue avatar-sm" data-avatar="blue"><span class="avatar-initials" id="topProfileInitials"></span></span>
+          <span class="profile-trigger-name" id="topProfileName"></span>
+          <svg class="chevron"><use href="#icon-chevron-down"></use></svg>
+        </button>
+        <div class="profile-menu" id="profileMenu" hidden>
+          <div class="profile-menu-head"><span class="avatar avatar-blue avatar-md" data-avatar="blue"><span class="avatar-initials"></span></span><div><strong id="menuProfileName"></strong><span id="menuProfileHandle"></span></div></div>
+          <button data-route="profile"><svg><use href="#icon-user"></use></svg> View profile</button>
+          <button data-route="settings"><svg><use href="#icon-settings"></use></svg> Settings</button>
+          <button id="menuLogout"><svg><use href="#icon-log-out"></use></svg> Sign out</button>
+        </div>
+      </nav>
+    </header>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-scroll">
+        <div class="sidebar-section">
+          <p class="sidebar-label">Discover</p>
+          <button class="side-link active" data-route="home"><svg><use href="#icon-home"></use></svg><span>Home</span></button>
+          <button class="side-link" data-route="discover"><svg><use href="#icon-compass"></use></svg><span>Discover</span></button>
+          <button class="side-link" data-route="marketplace"><svg><use href="#icon-shopping-bag"></use></svg><span>Marketplace</span><span class="side-badge">NEW</span></button>
+        </div>
+        <div class="sidebar-section">
+          <p class="sidebar-label">Personal</p>
+          <button class="side-link" data-route="profile"><svg><use href="#icon-user"></use></svg><span>Profile</span></button>
+          <button class="side-link" data-route="friends"><svg><use href="#icon-users"></use></svg><span>Friends</span><span class="count-badge" id="friendsCountBadge" hidden></span></button>
+          <button class="side-link" data-route="messages"><svg><use href="#icon-message"></use></svg><span>Messages</span></button>
+          <button class="side-link" data-route="avatar"><svg><use href="#icon-smile"></use></svg><span>Avatar</span></button>
+          <button class="side-link" data-route="inventory"><svg><use href="#icon-backpack"></use></svg><span>Inventory</span></button>
+        </div>
+        <div class="sidebar-section">
+          <p class="sidebar-label">Community</p>
+          <button class="side-link" data-route="groups"><svg><use href="#icon-building"></use></svg><span>Communities</span></button>
+          <button class="side-link" data-route="events"><svg><use href="#icon-calendar"></use></svg><span>Events</span></button>
+          <button class="side-link" data-route="create"><svg><use href="#icon-plus-square"></use></svg><span>Create</span></button>
+        </div>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="balance-row"><span><span class="coin-icon">R</span> Balance</span><strong id="balanceValue">1,250</strong></div>
+        <button class="side-link" data-route="settings"><svg><use href="#icon-settings"></use></svg><span>Settings</span></button>
+        <button class="side-link" data-route="help"><svg><use href="#icon-help-circle"></use></svg><span>Help</span></button>
+      </div>
+    </aside>
+
+    <main class="main-content" id="mainContent" tabindex="-1"></main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop" hidden></div>
+  <section class="modal" id="gameModal" role="dialog" aria-modal="true" aria-labelledby="gameModalTitle" hidden></section>
+  <section class="modal small-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" hidden></section>
+  <section class="modal small-modal" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle" hidden></section>
+  <section class="modal small-modal" id="actionModal" role="dialog" aria-modal="true" aria-labelledby="actionModalTitle" hidden></section>
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <svg class="svg-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.8"/><path d="m16 16 4.2 4.2"/></symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></symbol>
+    <symbol id="icon-message" viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M7 10h10M7 14h6"/></symbol>
+    <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="icon-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10Z"/><path d="M9 21v-7h6v7"/></symbol>
+    <symbol id="icon-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.4 8.6-2.1 4.7-4.7 2.1 2.1-4.7 4.7-2.1Z"/></symbol>
+    <symbol id="icon-shopping-bag" viewBox="0 0 24 24"><path d="M5 8h14l1 12H4L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3-5.3 7-5.3s6.2 1.8 7 5.3"/></symbol>
+    <symbol id="icon-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><path d="M3 19c.5-3.1 2.3-4.7 6-4.7s5.5 1.6 6 4.7M16 6.4a3 3 0 0 1 0 5.3M17 14.5c2.2.5 3.5 2 4 4.5"/></symbol>
+    <symbol id="icon-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.3 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></symbol>
+    <symbol id="icon-backpack" viewBox="0 0 24 24"><path d="M6 8h12v12H6zM9 8V6a3 3 0 0 1 6 0v2M4 11h16M9 15h6"/></symbol>
+    <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21V5l8-2 8 2v16M2 21h20M8 8h1M15 8h1M8 12h1M15 12h1M11 21v-5h2v5"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M7 14h.01M12 14h.01M17 14h.01M7 18h.01M12 18h.01"/></symbol>
+    <symbol id="icon-plus-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="m19.4 15 .1.1a1.6 1.6 0 1 1-2.3 2.3l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.6 1.6 0 1 1-3.2 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.6 1.6 0 1 1-2.3-2.3l.1-.1A1.7 1.7 0 0 0 4.6 12h-.2a1.6 1.6 0 1 1 0-3.2h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.6 1.6 0 1 1 2.3-2.3l.1.1A1.7 1.7 0 0 0 11 2.4v-.2a1.6 1.6 0 1 1 3.2 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.6 1.6 0 1 1 2.3 2.3l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.6 1.6 0 1 1 0 3.2h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></symbol>
+    <symbol id="icon-help-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.6 2.1c-.9.5-1.3 1-1.3 2M12 16.5h.01"/></symbol>
+    <symbol id="icon-log-out" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M8 12h10"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></symbol>
+    <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M20.8 8.8c0 5-8.8 10-8.8 10s-8.8-5-8.8-10A4.8 4.8 0 0 1 12 6a4.8 4.8 0 0 1 8.8 2.8Z"/></symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.5-4.5M8.2 13.2l7.5 4.5"/></symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m5 16-.8 4 4-.8L19 8.4a2.1 2.1 0 0 0-3-3L5 16Z"/><path d="m14.5 6.5 3 3"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-sliders" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4"/></symbol>
+    <symbol id="icon-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.7-3L3 11M4 5v6h6M4 13a8 8 0 0 0 14.7 3L21 13m0 6v-6h-6"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></symbol>
+    <symbol id="icon-maximize" viewBox="0 0 24 24"><path d="M8 4H4v4M16 4h4v4M20 16v4h-4M4 16v4h4"/></symbol>
+    <symbol id="icon-minimize" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M9 20v-5H4"/></symbol>
+    <symbol id="icon-volume" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6l-5 4H4ZM17 9a5 5 0 0 1 0 6M19.5 6.5a8.5 8.5 0 0 1 0 11"/></symbol>
+    <symbol id="icon-volume-off" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6l-5 4H4ZM18 9l4 6M22 9l-4 6"/></symbol>
+    <symbol id="icon-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3ZM19 14l.7 2.3L22 17l-2.3.7L19 20l-.7-2.3L16 17l2.3-.7L19 14ZM5 15l.6 1.9L7.5 18l-1.9.6L5 20.5l-.6-1.9L2.5 18l1.9-.6L5 15Z"/></symbol>
+    <symbol id="icon-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="icon-send" viewBox="0 0 24 24"><path d="m21 3-7.2 18-3.7-7.1L3 10.2 21 3Z"/><path d="M10.1 13.9 21 3"/></symbol>
+    <symbol id="icon-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M3 12s3.2-5 9-5 9 5 9 5-3.2 5-9 5-9-5-9-5Z"/><circle cx="12" cy="12" r="2"/></symbol>
+  </svg>
+  <script src="/app.js" defer></script>
+</body>
+</html>
