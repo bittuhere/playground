@@ -1,0 +1,17 @@
+{
+  "broker_home": {
+    "username": "broker_home",
+    "displayName": "BROKER_HOME",
+    "email": "",
+    "passwordSalt": "561cc61485c0b12a229cd116fd8bd42f",
+    "passwordHash": "4ad08df8f9a430863324d173a2b02cc6a12397436a06b5a3ed6ae0ff2c74c42e",
+    "avatar": "blue",
+    "joined": "September 2026",
+    "status": "Ready to play",
+    "about": "Exploring the world one experience at a time.",
+    "friends": [],
+    "friendRequests": [],
+    "pendingRequests": [],
+    "createdAt": 1789373472
+  }
+}

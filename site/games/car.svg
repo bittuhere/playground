@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" role="img" aria-label="Traffic Rider logo">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123d3b"/><stop offset="1" stop-color="#19a782"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="12"/></filter></defs>
+  <rect width="640" height="380" rx="28" fill="url(#bg)"/><circle cx="520" cy="78" r="90" fill="#fff" opacity=".12" filter="url(#glow)"/>
+  <path d="M118 284 198 92h242l80 192" fill="none" stroke="#fff" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/><path d="M315 116v152M221 190h188" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-dasharray="2 27" opacity=".75"/><path d="M166 280h-37m382 0h-37" stroke="#fff" stroke-width="16" stroke-linecap="round"/>
+  <text x="34" y="350" fill="#fff" font-family="Arial,sans-serif" font-size="28" font-weight="700" letter-spacing="4">TRAFFIC RIDER</text>
+</svg>

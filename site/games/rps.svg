@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" role="img" aria-label="Rock Paper Scissors logo">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#572b21"/><stop offset="1" stop-color="#d6663a"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="12"/></filter></defs>
+  <rect width="640" height="380" rx="28" fill="url(#bg)"/><circle cx="530" cy="70" r="92" fill="#fff" opacity=".13" filter="url(#glow)"/>
+  <g fill="#fff" opacity=".94"><path d="M150 226c-12-20-10-45 4-60l28-30 17 16 30-51c8-13 27-8 27 7v44l19-28c10-14 29-1 21 14l-16 30 19-19c12-12 29 4 19 17l-18 22 17-10c14-8 27 11 14 21l-41 30-30 42c-18 25-63 25-90-5Z"/><path d="M493 224a74 74 0 1 1-40-66l-18 17a49 49 0 1 0 11 50l-28-1 47-45 37 47-9-2Z"/></g>
+  <text x="34" y="350" fill="#fff" font-family="Arial,sans-serif" font-size="26" font-weight="700" letter-spacing="3">ROCK PAPER SCISSORS</text>
+</svg>

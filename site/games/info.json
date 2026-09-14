@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "description": "Game addon metadata for the Playground experience library. Add a new object to games to publish another card.",
+  "games": [
+    {
+      "id": "tic-tac-toe",
+      "title": "Tic Tac Toe",
+      "file": "ttt.html",
+      "image": "ttt.svg",
+      "category": "Casual",
+      "accent": "violet",
+      "description": "A quick classic for two players. Take the center and make your move.",
+      "players": "2 players",
+      "orientation": "any",
+      "status": "placeholder",
+      "comingSoonText": "The board is being polished for launch."
+    },
+    {
+      "id": "rock-paper-scissors",
+      "title": "Rock Paper Scissors",
+      "file": "rps.html",
+      "image": "rps.svg",
+      "category": "Casual",
+      "accent": "orange",
+      "description": "Challenge the computer and see who can build the longest win streak.",
+      "players": "1 player",
+      "orientation": "any",
+      "status": "placeholder",
+      "comingSoonText": "A new challenge is almost ready."
+    },
+    {
+      "id": "traffic-rider",
+      "title": "Traffic Rider",
+      "file": "car.html",
+      "image": "car.svg",
+      "category": "Racing",
+      "accent": "green",
+      "description": "Ride through the traffic, chase a high score, and keep your eyes on the road.",
+      "players": "1 player",
+      "orientation": "landscape",
+      "status": "placeholder",
+      "comingSoonText": "Tune your ride while the road is prepared."
+    },
+    {
+      "id": "space-builder",
+      "title": "Space Builder",
+      "file": "space-builder.html",
+      "image": "space-builder.svg",
+      "category": "Building",
+      "accent": "blue",
+      "description": "Design a tiny universe, connect the stars, and build something that feels like home.",
+      "players": "1–4 players",
+      "orientation": "landscape",
+      "status": "coming-soon",
+      "comingSoonText": "Coming soon — this community experience is still being assembled."
+    }
+  ]
+}
