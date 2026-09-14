@@ -1,23 +1,47 @@
-# Games folder
+# Playground app
 
-Place your game files and their optional logos here:
+This is a dark, responsive Roblox-inspired base app shell backed by the dependency-free `run.py` server in the workspace root. The app now has an account gate: register or log in before entering the dashboard. Localhost and private LAN addresses use the Python account store in `site/data/users.json`. Public hosts such as Render use Firebase Authentication and Firebase Realtime Database instead. The hosted Firebase database rules are in `site/firebase-database.rules.json`.
 
-```text
-site/games/ttt.html
-site/games/ttt.svg
-site/games/rps.html
-site/games/rps.svg
-site/games/car.html
-site/games/car.svg
+## Add a new game addon
+
+Put the playable HTML and its optional logo in `site/games/`, then add an object to `site/games/info.json`:
+
+```json
+{
+  "id": "my-game",
+  "title": "My Game",
+  "file": "my-game.html",
+  "image": "my-game.svg",
+  "category": "Casual",
+  "accent": "blue",
+  "description": "A short description.",
+  "players": "1 player",
+  "orientation": "landscape",
+  "status": "coming-soon"
+}
 ```
 
-Game metadata lives in `info.json`. Each entry can define:
+Supported logo formats are SVG, PNG, JPG, JPEG, and WEBP. Use `status: "coming-soon"` to publish a polished card before the HTML game is ready. A matching HTML file automatically becomes playable.
 
-- `id`, `title`, `file`
-- `image` — SVG, PNG, JPG, JPEG, or WEBP filename
-- `category`, `accent`, `description`, `players`
-- `status` — `placeholder`, `coming-soon`, or `ready`
-- `orientation` — `any`, `portrait`, or `landscape`
-- `comingSoonText` — optional message shown for a coming-soon card
+```text
+site/games/my-game.html
+site/games/my-game.svg
+```
 
-A matching `.html` file automatically changes the card to `ready`. Open **Discover → Refresh games** after adding files. Every ready game opens inside the app's immersive in-app player; there is no new-tab handoff.
+Open **Discover → Refresh games**. Ready games launch in an immersive in-app player with a loading transition, return-to-details control, sound-state toggle, and full-screen control. Landscape addons can set `orientation: "landscape"`; the player uses the Screen Orientation API when available, has a phone-rotate instruction animation as a fallback, and always exposes an exit-landscape path. The player stays in the dashboard instead of opening a new browser tab.
+
+## Run locally or on a LAN
+
+From the workspace root:
+
+```bash
+python run.py
+```
+
+Open `http://localhost:8000`. On another device on the same network, use the computer's LAN IP and port 8000. The server already binds to `0.0.0.0`.
+
+## Render
+
+Use `python run.py` as the Start Command. The server reads Render's `PORT` environment variable automatically and does not need third-party packages or a build step.
+
+The server handles static files, safe path checking, game discovery, profile persistence, feedback, health checks, optional asset manifests, missing routes, and JSON API errors. `ASSET_MANIFEST_URL` is an optional environment variable for a JSON object of filename-to-URL asset downloads; the app remains fully usable without it.
