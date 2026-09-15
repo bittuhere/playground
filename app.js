@@ -13,6 +13,7 @@
     appId: "1:330243946282:web:e6b7b7d34170de67311053"
   };
   let firebaseApi = null;
+  const APP_BUILD = "username-auth-2026-09-15";
 
   const DEFAULT_PROFILE = {
     displayName: "",
@@ -135,7 +136,7 @@
     motionReduced: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
   };
 
-  console.info(`[Playground] ${state.backendMode === "firebase" ? "Firebase hosted" : "Local Python"} backend selected for ${window.location.hostname}`);
+  console.info(`[Playground ${APP_BUILD}] ${state.backendMode === "firebase" ? "Firebase hosted" : "Local Python"} backend selected for ${window.location.hostname}`);
 
   const main = document.getElementById("mainContent");
   const searchInput = document.getElementById("globalSearch");
@@ -450,15 +451,23 @@
 
   function firebaseAuthMessage(error) {
     const code = String(error?.code || "");
+    const rawMessage = String(error?.message || "");
     const messages = {
       "auth/invalid-credential": "Incorrect username, email, or password.",
       "auth/invalid-login-credentials": "Incorrect username, email, or password.",
-      "auth/email-already-in-use": "That email is already registered.",
-      "auth/weak-password": "Choose a stronger password.",
-      "auth/invalid-email": "Enter a valid email address.",
-      "auth/too-many-requests": "Too many attempts. Please wait and try again."
+      "auth/email-already-in-use": "That account identifier is already registered.",
+      "auth/weak-password": "Choose a stronger password of at least 8 characters.",
+      "auth/invalid-email": "That username could not be converted into a valid Firebase identifier.",
+      "auth/operation-not-allowed": "Firebase Email/Password sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method.",
+      "auth/unauthorized-domain": "This hosted domain is not authorized in Firebase Authentication settings.",
+      "auth/network-request-failed": "Firebase could not reach the network. Check the connection and try again.",
+      "auth/too-many-requests": "Too many attempts. Please wait and try again.",
+      "PERMISSION_DENIED": "Firebase rejected the database request. Paste the latest Realtime Database rules and try again."
     };
-    return messages[code] || "";
+    if (messages[code]) return messages[code];
+    if (/permission_denied|permission denied/i.test(`${code} ${rawMessage}`)) return messages.PERMISSION_DENIED;
+    if (code) return `Firebase request failed (${code}).`;
+    return "";
   }
 
   async function getJSON(url, options) {
@@ -641,7 +650,7 @@
       } catch (error) {
         state.authBusy = false;
         state.authReady = true;
-        state.authError = "Firebase could not initialize. Check the Realtime Database URL and authorized domains.";
+        state.authError = firebaseAuthMessage(error) || "Firebase could not initialize. Check the Realtime Database URL, authorized domains, and Email/Password provider.";
         renderAuth();
       }
       return;
