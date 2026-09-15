@@ -42,7 +42,14 @@ FEEDBACK_FILE = DATA_DIR / "feedback.jsonl"
 GAME_INFO_FILE = GAMES_DIR / "info.json"
 SESSION_COOKIE = "playground_session"
 SESSIONS: dict[str, str] = {}
+# Admin credentials are server-only environment variables. The username defaults
+# to bittuhere. Set ADMIN_PASSWORD_SHA256 to the lowercase SHA-256 digest of
+# the real password; never put the password or digest in JavaScript.
+ADMIN_SESSION_TTL = 8 * 60 * 60
+ADMIN_SESSIONS: dict[str, float] = {}
+ADMIN_FAILURES: dict[str, tuple[int, float]] = {}
 SESSION_LOCK = threading.RLock()
+ADMIN_LOCK = threading.RLock()
 USER_LOCK = threading.RLock()
 
 DEFAULT_PROFILE = {
@@ -156,6 +163,10 @@ def load_users() -> dict[str, dict[str, Any]]:
 
 def normalise_username(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def conversation_id(first: str, second: str) -> str:
+    return "__".join(sorted((str(first), str(second))))
 
 
 def password_hash(password: str, salt: bytes | None = None) -> tuple[str, str]:
@@ -306,6 +317,103 @@ def json_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False).encode("utf-8")
 
 
+def admin_snapshot_local() -> dict[str, Any]:
+    with USER_LOCK:
+        users = load_users()
+    rows = []
+    request_rows = []
+    chat_rows = {}
+    friend_requests = 0
+    conversation_count = 0
+    for username, user in users.items():
+        requests = user.get("friendRequests", []) if isinstance(user.get("friendRequests", []), list) else []
+        friend_requests += len(requests)
+        for from_username in requests:
+            sender = users.get(from_username, {})
+            request_rows.append({"fromUsername": from_username, "fromDisplayName": sender.get("displayName", from_username), "targetUsername": username, "targetDisplayName": user.get("displayName", username)})
+        conversations = user.get("conversations", {}) if isinstance(user.get("conversations", {}), dict) else {}
+        conversation_count += len(conversations)
+        for cid, conversation in conversations.items():
+            if not isinstance(conversation, dict): continue
+            existing = chat_rows.setdefault(cid, {"id": cid, "participants": cid.replace("__", " · "), "lastMessage": conversation.get("lastMessage", ""), "lastAt": conversation.get("lastAt", 0), "messages": len(conversation.get("messages", []) if isinstance(conversation.get("messages", []), list) else [])})
+            if int(conversation.get("lastAt", 0) or 0) > int(existing.get("lastAt", 0) or 0): existing.update({"lastMessage": conversation.get("lastMessage", ""), "lastAt": conversation.get("lastAt", 0)})
+        rows.append({
+            "username": username,
+            "displayName": user.get("displayName", username),
+            "email": user.get("email", ""),
+            "avatar": user.get("avatar", "blue"),
+            "status": user.get("status", ""),
+            "joined": user.get("joined", ""),
+            "createdAt": user.get("createdAt", 0),
+            "friends": len(user.get("friends", []) if isinstance(user.get("friends", []), list) else []),
+            "pendingRequests": len(requests),
+            "conversations": len(conversations),
+        })
+    feedback = []
+    try:
+        for line in FEEDBACK_FILE.read_text(encoding="utf-8").splitlines()[-50:]:
+            entry = json.loads(line)
+            if isinstance(entry, dict): feedback.append({"message": str(entry.get("message", ""))[:1000], "at": entry.get("at", 0)})
+    except (OSError, ValueError, TypeError):
+        pass
+    rows.sort(key=lambda row: int(row.get("createdAt", 0) or 0), reverse=True)
+    return {"source": "local", "stats": {"users": len(rows), "pendingFriendRequests": friend_requests, "conversations": len(chat_rows), "feedback": len(feedback)}, "users": rows, "requests": request_rows, "chats": sorted(chat_rows.values(), key=lambda row: int(row.get("lastAt", 0) or 0), reverse=True), "feedback": list(reversed(feedback))}
+
+
+def firebase_admin_root() -> Any | None:
+    service_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not service_json:
+        return None
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, db
+        try:
+            firebase_admin.get_app()
+        except ValueError:
+            firebase_admin.initialize_app(credentials.Certificate(json.loads(service_json)), {"databaseURL": os.environ.get("FIREBASE_DATABASE_URL", "https://playground-bittuhere-default-rtdb.asia-southeast1.firebasedatabase.app")})
+        return db.reference("/").get() or {}
+    except Exception as error:
+        print(f"[admin] Firebase Admin unavailable: {error}", file=sys.stderr)
+        return None
+
+
+def admin_snapshot_firebase() -> dict[str, Any] | None:
+    root = firebase_admin_root()
+    if root is None or not isinstance(root, dict): return None
+    users = root.get("users", {}) if isinstance(root.get("users", {}), dict) else {}
+    friends = root.get("friends", {}) if isinstance(root.get("friends", {}), dict) else {}
+    pending = root.get("friendRequests", {}) if isinstance(root.get("friendRequests", {}), dict) else {}
+    conversations = root.get("userConversations", {}) if isinstance(root.get("userConversations", {}), dict) else {}
+    rows = []
+    request_rows = []
+    chat_rows = []
+    for target_uid, entries in pending.items():
+        if isinstance(entries, dict):
+            for from_uid, request in entries.items():
+                if isinstance(request, dict): request_rows.append({"fromUsername": request.get("fromUsername", from_uid), "fromDisplayName": request.get("fromDisplayName", from_uid), "targetUsername": request.get("targetUid", target_uid), "targetDisplayName": ""})
+    conversation_root = root.get("conversations", {}) if isinstance(root.get("conversations", {}), dict) else {}
+    for cid, conversation in conversation_root.items():
+        if not isinstance(conversation, dict): continue
+        members = conversation.get("members", {}) if isinstance(conversation.get("members", {}), dict) else {}
+        messages = conversation.get("messages", {}) if isinstance(conversation.get("messages", {}), dict) else {}
+        latest = max(messages.values(), key=lambda entry: int(entry.get("createdAt", 0) or 0)) if messages else {}
+        chat_rows.append({"id": cid, "participants": " · ".join(members.keys()), "lastMessage": latest.get("text", ""), "lastAt": latest.get("createdAt", 0), "messages": len(messages)})
+    for uid, user in users.items():
+        if not isinstance(user, dict): continue
+        friend_count = len(friends.get(uid, {}) if isinstance(friends.get(uid, {}), dict) else {})
+        request_count = len(pending.get(uid, {}) if isinstance(pending.get(uid, {}), dict) else {})
+        chat_count = len(conversations.get(uid, {}) if isinstance(conversations.get(uid, {}), dict) else {})
+        rows.append({"uid": uid, "username": user.get("username", ""), "displayName": user.get("displayName", ""), "email": user.get("email", ""), "avatar": user.get("avatar", "blue"), "status": user.get("status", ""), "joined": user.get("joined", ""), "updatedAt": user.get("updatedAt", 0), "friends": friend_count, "pendingRequests": request_count, "conversations": chat_count})
+    feedback_root = root.get("feedback", {}) if isinstance(root.get("feedback", {}), dict) else {}
+    feedback = []
+    for uid, entries in feedback_root.items():
+        if isinstance(entries, dict):
+            for entry_id, entry in entries.items():
+                if isinstance(entry, dict): feedback.append({"uid": uid, "id": entry_id, "message": str(entry.get("message", ""))[:1000], "at": entry.get("at", 0)})
+    rows.sort(key=lambda row: int(row.get("updatedAt", 0) or 0), reverse=True)
+    return {"source": "firebase", "stats": {"users": len(rows), "pendingFriendRequests": len(request_rows), "conversations": len(chat_rows), "feedback": len(feedback)}, "users": rows, "requests": request_rows, "chats": sorted(chat_rows, key=lambda row: int(row.get("lastAt", 0) or 0), reverse=True), "feedback": sorted(feedback, key=lambda entry: int(entry.get("at", 0) or 0), reverse=True)[:100]}
+
+
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "PlaygroundServer/1.0"
 
@@ -313,12 +421,43 @@ class AppHandler(BaseHTTPRequestHandler):
         # Keep Render and LAN logs useful without dumping request bodies.
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), format % args))
 
+    def _admin_cookie(self, token: str, max_age: int = ADMIN_SESSION_TTL) -> str:
+        secure = os.environ.get("COOKIE_SECURE", "").lower() in {"1", "true", "yes"} or self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+        value = f"playground_admin={token}; Max-Age={max_age}; Path=/; HttpOnly; SameSite=Strict"
+        return value + ("; Secure" if secure else "")
+
+    def _admin_client_id(self) -> str:
+        # Render places the app behind a proxy. The first forwarded address is
+        # used for throttling only; credentials are never logged or echoed.
+        forwarded = self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        return forwarded or self.client_address[0]
+
+    def _admin_current(self) -> bool:
+        try:
+            cookies = SimpleCookie(self.headers.get("Cookie", ""))
+            token = cookies.get("playground_admin").value if cookies.get("playground_admin") else ""
+        except (ValueError, AttributeError):
+            token = ""
+        now = time.time()
+        with ADMIN_LOCK:
+            expired = [key for key, expires in ADMIN_SESSIONS.items() if expires <= now]
+            for key in expired: ADMIN_SESSIONS.pop(key, None)
+            return bool(token and token in ADMIN_SESSIONS)
+
+    def _require_admin(self) -> bool:
+        if not self._admin_current():
+            self._send_json({"authenticated": False, "error": "Admin authentication required"}, 401)
+            return False
+        return True
+
     def _send_bytes(self, body: bytes, status: int = 200, content_type: str = "text/plain; charset=utf-8", cache: bool = False) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Frame-Options", "DENY" if self.path.split("?", 1)[0] in {"/admin", "/admin/"} or self.path.startswith("/api/admin/") else "SAMEORIGIN")
+        if self.path.split("?", 1)[0] in {"/admin", "/admin/"}:
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         self.send_header("Cache-Control", "public, max-age=300" if cache else "no-store")
@@ -385,6 +524,29 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path in {"/admin", "/admin/"}:
+            configured_hash = os.environ.get("ADMIN_PASSWORD_SHA256", "").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", configured_hash):
+                self._send_bytes(b"Not found", 404)
+                return
+            admin_file = SITE_DIR / "admin.html"
+            if admin_file.is_file(): self._send_bytes(admin_file.read_bytes(), 200, "text/html; charset=utf-8")
+            else: self._send_bytes(b"Admin panel is not installed", 503)
+            return
+        if path == "/api/admin/me":
+            self._send_json({"authenticated": self._admin_current()})
+            return
+        if path == "/api/admin/overview":
+            if not self._require_admin(): return
+            if os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON"):
+                snapshot = admin_snapshot_firebase()
+                if snapshot is None:
+                    self._send_json({"error": "Firebase Admin is not available. Check firebase-admin installation and FIREBASE_SERVICE_ACCOUNT_JSON."}, 503)
+                    return
+                self._send_json(snapshot)
+            else:
+                self._send_json(admin_snapshot_local())
+            return
         if path == "/api/health":
             self._send_json({"ok": True, "service": "roblox-style-playground", "time": int(time.time())})
             return
@@ -411,7 +573,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if current:
                 username = current[0]
                 with USER_LOCK:
-                    people = [public_user(user) for key, user in load_users().items() if key != username]
+                    people = [{"uid": key, **public_user(user)} for key, user in load_users().items() if key != username]
                 self._send_json({"people": people})
             return
         if path == "/api/friends":
@@ -419,11 +581,23 @@ class AppHandler(BaseHTTPRequestHandler):
             if current:
                 friends = current[1].get("friends", []) if isinstance(current[1].get("friends", []), list) else []
                 pending = current[1].get("pendingRequests", []) if isinstance(current[1].get("pendingRequests", []), list) else []
+                incoming_names = current[1].get("friendRequests", []) if isinstance(current[1].get("friendRequests", []), list) else []
                 with USER_LOCK:
                     users = load_users()
-                    friend_profiles = [public_user(users[name]) for name in friends if name in users]
-                    pending_profiles = [public_user(users[name]) for name in pending if name in users]
-                self._send_json({"friends": friend_profiles, "pending": pending_profiles})
+                    friend_profiles = [{"uid": name, **public_user(users[name])} for name in friends if name in users]
+                    pending_profiles = [{"uid": name, **public_user(users[name])} for name in pending if name in users]
+                    incoming_profiles = [{"uid": name, "fromUid": name, "fromUsername": name, "fromDisplayName": users[name].get("displayName", name), "fromAvatar": users[name].get("avatar", "blue"), "username": name, "displayName": users[name].get("displayName", name), "avatar": users[name].get("avatar", "blue")} for name in incoming_names if name in users]
+                self._send_json({"friends": friend_profiles, "pending": pending_profiles, "incoming": incoming_profiles})
+            return
+        if path == "/api/messages":
+            current = self._require_user()
+            if current:
+                conversations = current[1].get("conversations", {}) if isinstance(current[1].get("conversations", {}), dict) else {}
+                values = []
+                for cid, conversation in conversations.items():
+                    if isinstance(conversation, dict): values.append({"id": cid, **conversation})
+                values.sort(key=lambda item: int(item.get("lastAt", 0) or 0), reverse=True)
+                self._send_json({"conversations": values})
             return
         if path == "/api/activity":
             current = self._require_user()
@@ -437,6 +611,51 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/admin/login":
+            data = self._read_body() or {}
+            configured_user = os.environ.get("ADMIN_USERNAME", "bittuhere").strip()
+            configured_hash = os.environ.get("ADMIN_PASSWORD_SHA256", "").strip().lower()
+            # Only the digest is accepted. Never place the password or digest
+            # in frontend code or committed files.
+            username = str(data.get("username", "")).strip()
+            password = str(data.get("password", ""))
+            client_id = self._admin_client_id()
+            now = time.time()
+            with ADMIN_LOCK:
+                failures, locked_until = ADMIN_FAILURES.get(client_id, (0, 0.0))
+                if locked_until > now:
+                    self._send_json({"error": "Too many failed attempts. Try again later."}, 429)
+                    return
+                if locked_until:
+                    ADMIN_FAILURES.pop(client_id, None)
+            valid_hash_format = bool(re.fullmatch(r"[0-9a-f]{64}", configured_hash))
+            password_hash_matches = valid_hash_format and hmac.compare_digest(hashlib.sha256(password.encode("utf-8")).hexdigest(), configured_hash)
+            valid = bool(configured_user and configured_hash and len(username) <= 120 and len(password) <= 256 and hmac.compare_digest(username.casefold(), configured_user.casefold()) and password_hash_matches)
+            if not valid:
+                with ADMIN_LOCK:
+                    failures += 1
+                    if failures >= 5:
+                        ADMIN_FAILURES[client_id] = (failures, now + 15 * 60)
+                    else:
+                        ADMIN_FAILURES[client_id] = (failures, 0.0)
+                self._send_json({"error": "Incorrect admin credentials."}, 401)
+                return
+            with ADMIN_LOCK:
+                ADMIN_FAILURES.pop(client_id, None)
+            token = secrets.token_urlsafe(48)
+            with ADMIN_LOCK: ADMIN_SESSIONS[token] = now + ADMIN_SESSION_TTL
+            self.response_cookie = self._admin_cookie(token)
+            self._send_json({"authenticated": True, "expiresIn": ADMIN_SESSION_TTL})
+            return
+        if parsed.path == "/api/admin/logout":
+            try:
+                cookies = SimpleCookie(self.headers.get("Cookie", ""))
+                token = cookies.get("playground_admin").value if cookies.get("playground_admin") else ""
+            except (ValueError, AttributeError): token = ""
+            with ADMIN_LOCK: ADMIN_SESSIONS.pop(token, None)
+            self.response_cookie = self._admin_cookie("", 0)
+            self._send_json({"authenticated": False})
+            return
         if parsed.path == "/api/auth/register":
             data = self._read_body()
             username = normalise_username(data.get("username") if data else "")
@@ -543,6 +762,66 @@ class AppHandler(BaseHTTPRequestHandler):
                     return
             self._send_json({"ok": True, "target": target})
             return
+        if parsed.path in {"/api/friends/accept", "/api/friends/decline"}:
+            current = self._require_user()
+            data = self._read_body()
+            target = normalise_username(data.get("username") if data else "")
+            if not current: return
+            if not target or target == current[0]:
+                self._send_json({"error": "Choose a valid request."}, 400)
+                return
+            with USER_LOCK:
+                users = load_users()
+                owner = users.get(current[0], {})
+                incoming = owner.get("friendRequests", []) if isinstance(owner.get("friendRequests", []), list) else []
+                if target not in incoming or target not in users:
+                    self._send_json({"error": "That friend request is no longer available."}, 404)
+                    return
+                owner["friendRequests"] = [name for name in incoming if name != target]
+                users[target]["pendingRequests"] = [name for name in users[target].get("pendingRequests", []) if name != current[0]]
+                if parsed.path.endswith("/accept"):
+                    owner["friends"] = list(dict.fromkeys(owner.get("friends", []) + [target]))
+                    users[target]["friends"] = list(dict.fromkeys(users[target].get("friends", []) + [current[0]]))
+                try: save_json_file(USERS_FILE, users)
+                except OSError:
+                    self._send_json({"error": "Friend storage is not writable on this host."}, 503)
+                    return
+            self._send_json({"ok": True})
+            return
+        if parsed.path == "/api/messages/send":
+            current = self._require_user()
+            data = self._read_body()
+            target = normalise_username(data.get("username") if data else "")
+            text = str(data.get("message", "")).strip()[:1000] if data else ""
+            if not current: return
+            if not target or target == current[0] or not text:
+                self._send_json({"error": "Choose a recipient and write a message."}, 400)
+                return
+            with USER_LOCK:
+                users = load_users()
+                if target not in users:
+                    self._send_json({"error": "Player not found."}, 404)
+                    return
+                cid = conversation_id(current[0], target)
+                now = int(time.time() * 1000)
+                message = {"id": secrets.token_urlsafe(9), "senderUid": current[0], "senderUsername": current[0], "senderDisplayName": current[1].get("displayName", current[0]), "text": text, "createdAt": now}
+                sender = users[current[0]]
+                recipient = users[target]
+                sender_conversations = sender.setdefault("conversations", {})
+                recipient_conversations = recipient.setdefault("conversations", {})
+                sender_conv = sender_conversations.setdefault(cid, {"otherUid": target, "otherUsername": target, "otherDisplayName": recipient.get("displayName", target), "otherAvatar": recipient.get("avatar", "blue"), "messages": []})
+                recipient_conv = recipient_conversations.setdefault(cid, {"otherUid": current[0], "otherUsername": current[0], "otherDisplayName": sender.get("displayName", current[0]), "otherAvatar": sender.get("avatar", "blue"), "messages": []})
+                sender_conv.setdefault("messages", []).append(message)
+                recipient_conv.setdefault("messages", []).append(message)
+                for conv in (sender_conv, recipient_conv):
+                    conv["lastMessage"] = text
+                    conv["lastAt"] = now
+                try: save_json_file(USERS_FILE, users)
+                except OSError:
+                    self._send_json({"error": "Message storage is not writable on this host."}, 503)
+                    return
+            self._send_json({"ok": True, "conversationId": cid, "message": message})
+            return
         if parsed.path == "/api/profile":
             current_user = self._require_user()
             if not current_user:
@@ -560,7 +839,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         self._send_json({"error": f"{key} is too long"}, 400)
                         return
                     updated[key] = value
-            if updated.get("avatar") not in {"blue", "pink", "green", "orange", "purple"}:
+            if updated.get("avatar") not in {"blue", "pink", "green", "orange", "purple", "ice", "ember", "aurora", "cobalt", "berry", "lime", "midnight", "coral", "royal", "gold", "nebula", "cyber", "lava", "mono", "pixel"}:
                 updated["avatar"] = "blue"
             with USER_LOCK:
                 users = load_users()

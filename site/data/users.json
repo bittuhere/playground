@@ -13,5 +13,20 @@
     "friendRequests": [],
     "pendingRequests": [],
     "createdAt": 1789373472
+  },
+  "op_vishno": {
+    "username": "op_vishno",
+    "displayName": "OP_VISHNO",
+    "email": "anurag670singh@gmail.com",
+    "passwordSalt": "b31424b17944aab1e1ae83e038ce5515",
+    "passwordHash": "0f3abf7c2e21af4241108487ce0ed55e07bac3ef8eab559a883e75a7feec60ae",
+    "avatar": "blue",
+    "joined": "September 2026",
+    "status": "Ready to play",
+    "about": "Exploring the world one experience at a time.",
+    "friends": [],
+    "friendRequests": [],
+    "pendingRequests": [],
+    "createdAt": 1789460986
   }
 }
