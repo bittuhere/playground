@@ -13,6 +13,7 @@
     appId: "1:330243946282:web:e6b7b7d34170de67311053"
   };
   let firebaseApi = null;
+  const APP_BUILD = "username-auth-2026-09-15";
 
   const DEFAULT_PROFILE = {
     displayName: "",
@@ -135,7 +136,7 @@
     motionReduced: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
   };
 
-  console.info(`[Playground] ${state.backendMode === "firebase" ? "Firebase hosted" : "Local Python"} backend selected for ${window.location.hostname}`);
+  console.info(`[Playground ${APP_BUILD}] ${state.backendMode === "firebase" ? "Firebase hosted" : "Local Python"} backend selected for ${window.location.hostname}`);
 
   const main = document.getElementById("mainContent");
   const searchInput = document.getElementById("globalSearch");
@@ -263,8 +264,14 @@
     return firebaseApi;
   }
 
+  const FIREBASE_USERNAME_DOMAIN = "playground-bittuhere.firebaseapp.com";
+
   function firebaseUid() { return firebaseApi?.auth?.currentUser?.uid || ""; }
   function firebaseRef(path) { return firebaseApi.ref(firebaseApi.database, path); }
+  function firebaseAuthEmail(identifier) {
+    const value = String(identifier || "").trim().toLowerCase();
+    return value.includes("@") ? value : `${value}@${FIREBASE_USERNAME_DOMAIN}`;
+  }
   async function firebaseRead(path) {
     const snapshot = await firebaseApi.get(firebaseRef(path));
     return snapshot.exists() ? snapshot.val() : null;
@@ -385,6 +392,7 @@
     const register = state.authMode === "register";
     const data = Object.fromEntries(new FormData(form).entries());
     state.authValues = { ...state.authValues, ...data };
+    const identifier = String(data.identifier || "").trim();
     if (register && String(data.password) !== String(data.confirmPassword)) {
       state.authError = "Passwords do not match.";
       renderAuth();
@@ -395,13 +403,8 @@
       renderAuth();
       return;
     }
-    if (register && !/^[a-z0-9_]{3,20}$/i.test(String(data.identifier || "").trim())) {
-      state.authError = "Username must be 3–20 characters using letters, numbers, or underscores.";
-      renderAuth();
-      return;
-    }
-    if (register && !String(data.email || "").trim()) {
-      state.authError = "Email is required when using Firebase hosting.";
+    if (!/^[a-z0-9_]{3,20}$/i.test(identifier) && (register || !identifier.includes("@"))) {
+      state.authError = register ? "Username must be 3–20 characters using letters, numbers, or underscores." : "Enter your username or email.";
       renderAuth();
       return;
     }
@@ -411,40 +414,60 @@
     if (submit) { submit.disabled = true; submit.innerHTML = `<span class="auth-spinner"></span> ${register ? "Creating account" : "Signing in"}...`; }
     try {
       if (register) {
-        const credential = await firebaseApi.createUserWithEmailAndPassword(firebaseApi.auth, String(data.email).trim(), String(data.password));
+        const username = identifier.toLowerCase();
+        const authEmail = firebaseAuthEmail(username);
+        const credential = await firebaseApi.createUserWithEmailAndPassword(firebaseApi.auth, authEmail, String(data.password));
         await firebaseApi.updateProfile(credential.user, { displayName: String(data.displayName).trim() });
-        const username = String(data.identifier).trim().toLowerCase();
         const usernameRef = firebaseRef(`usernames/${username}`);
         const reservation = await firebaseApi.runTransaction(usernameRef, (current) => current === null ? credential.user.uid : undefined);
         if (!reservation.committed) {
           await firebaseApi.deleteUser(credential.user);
           throw Object.assign(new Error("That username is already registered."), { payload: { error: "That username is already registered." } });
         }
-        await writeFirebaseProfile({ username, displayName: String(data.displayName).trim(), email: String(data.email).trim() });
+        await writeFirebaseProfile({ username, displayName: String(data.displayName).trim() });
       } else {
-        await firebaseApi.signInWithEmailAndPassword(firebaseApi.auth, String(data.identifier).trim(), String(data.password));
+        const credential = await firebaseApi.signInWithEmailAndPassword(firebaseApi.auth, firebaseAuthEmail(identifier), String(data.password));
+        // Accounts created by the previous email-required version can still
+        // sign in with their old email once. After that, migrate their Auth
+        // identifier to the username-based synthetic address.
+        if (identifier.includes("@")) {
+          try {
+            const stored = await firebaseRead(`users/${credential.user.uid}`) || {};
+            const username = String(stored.username || "").toLowerCase();
+            const usernameEmail = username ? firebaseAuthEmail(username) : "";
+            if (usernameEmail && credential.user.email !== usernameEmail) await firebaseApi.updateEmail(credential.user, usernameEmail);
+          } catch { /* Legacy migration is best-effort and never blocks login. */ }
+        }
       }
       state.authValues = {};
       state.authError = "";
       // onAuthStateChanged completes the signed-in boot sequence.
     } catch (error) {
       state.authBusy = false;
-      state.authError = error?.payload?.error || firebaseAuthMessage(error) || "Firebase could not complete that request.";
+      state.authError = error?.payload?.error || (register && error?.code === "auth/email-already-in-use" ? "That username is already registered." : firebaseAuthMessage(error)) || "Firebase could not complete that request.";
       renderAuth();
     }
   }
 
   function firebaseAuthMessage(error) {
     const code = String(error?.code || "");
+    const rawMessage = String(error?.message || "");
     const messages = {
-      "auth/invalid-credential": "Incorrect email or password.",
-      "auth/invalid-login-credentials": "Incorrect email or password.",
-      "auth/email-already-in-use": "That email is already registered.",
-      "auth/weak-password": "Choose a stronger password.",
-      "auth/invalid-email": "Enter a valid email address.",
-      "auth/too-many-requests": "Too many attempts. Please wait and try again."
+      "auth/invalid-credential": "Incorrect username, email, or password.",
+      "auth/invalid-login-credentials": "Incorrect username, email, or password.",
+      "auth/email-already-in-use": "That account identifier is already registered.",
+      "auth/weak-password": "Choose a stronger password of at least 8 characters.",
+      "auth/invalid-email": "That username could not be converted into a valid Firebase identifier.",
+      "auth/operation-not-allowed": "Firebase Email/Password sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method.",
+      "auth/unauthorized-domain": "This hosted domain is not authorized in Firebase Authentication settings.",
+      "auth/network-request-failed": "Firebase could not reach the network. Check the connection and try again.",
+      "auth/too-many-requests": "Too many attempts. Please wait and try again.",
+      "PERMISSION_DENIED": "Firebase rejected the database request. Paste the latest Realtime Database rules and try again."
     };
-    return messages[code] || "";
+    if (messages[code]) return messages[code];
+    if (/permission_denied|permission denied/i.test(`${code} ${rawMessage}`)) return messages.PERMISSION_DENIED;
+    if (code) return `Firebase request failed (${code}).`;
+    return "";
   }
 
   async function getJSON(url, options) {
@@ -541,9 +564,8 @@
   function renderAuth() {
     syncProfileUi();
     const register = state.authMode === "register";
-    const firebaseMode = state.backendMode === "firebase";
     const direction = state.authTransitionDirection ? ` auth-enter-${state.authTransitionDirection}` : "";
-    main.innerHTML = `<div class="auth-page view-transition is-visible"><div class="auth-card"><div class="auth-brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>PLAYGROUND</span></div><div class="auth-dynamic${direction}"><div class="auth-kicker">${register ? "Create your account" : "Welcome back"}</div><h1>${register ? "Make your mark." : "Sign in to play."}</h1><p class="auth-subtitle">${register ? "Create a free account and keep your profile, favorites, and experiences together." : "Log in to continue to your experiences and friends."}</p><div class="auth-tabs" role="tablist" aria-label="Account access"><button class="auth-tab ${!register ? "active" : ""}" data-auth-mode="login" role="tab" aria-selected="${!register}">Log in</button><button class="auth-tab ${register ? "active" : ""}" data-auth-mode="register" role="tab" aria-selected="${register}">Register</button></div><form id="authForm" novalidate>${register ? `<div class="auth-field"><label for="authDisplayName">Display name</label><input id="authDisplayName" name="displayName" maxlength="40" autocomplete="name" value="${authValue("displayName")}" placeholder="How should we call you?" required></div>` : ""}<div class="auth-field"><label for="authIdentifier">${register ? "Username" : firebaseMode ? "Email" : "Username or email"}</label><input id="authIdentifier" name="identifier" maxlength="120" type="${!register && firebaseMode ? "email" : "text"}" autocomplete="${!register && firebaseMode ? "email" : "username"}" value="${authValue("identifier")}" placeholder="${register ? "Choose a username" : firebaseMode ? "Enter your email" : "Enter your username or email"}" required></div>${register ? `<div class="auth-field"><label for="authEmail">Email <span>${firebaseMode ? "required" : "optional"}</span></label><input id="authEmail" name="email" type="email" maxlength="120" autocomplete="email" value="${authValue("email")}" placeholder="you@example.com" ${firebaseMode ? "required" : ""}></div>` : ""}<div class="auth-field"><div class="auth-label-row"><label for="authPassword">Password</label></div><div class="password-wrap"><input id="authPassword" name="password" type="password" minlength="8" maxlength="128" autocomplete="${register ? "new-password" : "current-password"}" value="${authValue("password")}" placeholder="${register ? "At least 8 characters" : "Your password"}" required><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password">${icon("eye")}</button></div></div>${register ? `<div class="auth-field"><label for="authConfirm">Confirm password</label><div class="password-wrap"><input id="authConfirm" name="confirmPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password" value="${authValue("confirmPassword")}" placeholder="Repeat your password" required><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password">${icon("eye")}</button></div></div>` : ""}<div class="auth-error" id="authError" role="alert" ${state.authError ? "" : "hidden"}>${escapeHtml(state.authError)}</div><button class="button auth-submit" type="submit">${register ? "Create account" : "Log in"} ${icon("chevron-right")}</button></form><p class="auth-terms">By continuing, you agree to keep the community safe and respectful.</p></div></div><div class="auth-aside"><div class="auth-aside-glow"></div><div class="auth-aside-orbit"></div><span class="auth-aside-icon">✦</span><strong>${register ? "Your next chapter starts here." : "Everything you love, in one place."}</strong><span>Experiences, creations, and your people — all saved to your account.</span></div></div>`;
+    main.innerHTML = `<div class="auth-page view-transition is-visible"><div class="auth-card"><div class="auth-brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>PLAYGROUND</span></div><div class="auth-dynamic${direction}"><div class="auth-kicker">${register ? "Create your account" : "Welcome back"}</div><h1>${register ? "Make your mark." : "Sign in to play."}</h1><p class="auth-subtitle">${register ? "Create a free account and keep your profile, favorites, and experiences together." : "Log in to continue to your experiences and friends."}</p><div class="auth-tabs" role="tablist" aria-label="Account access"><button class="auth-tab ${!register ? "active" : ""}" data-auth-mode="login" role="tab" aria-selected="${!register}">Log in</button><button class="auth-tab ${register ? "active" : ""}" data-auth-mode="register" role="tab" aria-selected="${register}">Register</button></div><form id="authForm" novalidate>${register ? `<div class="auth-field"><label for="authDisplayName">Display name</label><input id="authDisplayName" name="displayName" maxlength="40" autocomplete="name" value="${authValue("displayName")}" placeholder="How should we call you?" required></div>` : ""}<div class="auth-field"><label for="authIdentifier">${register ? "Username" : "Username or email"}</label><input id="authIdentifier" name="identifier" maxlength="120" type="text" autocomplete="username" value="${authValue("identifier")}" placeholder="${register ? "Choose a username" : "Enter your username or email"}" required></div><div class="auth-field"><div class="auth-label-row"><label for="authPassword">Password</label></div><div class="password-wrap"><input id="authPassword" name="password" type="password" minlength="8" maxlength="128" autocomplete="${register ? "new-password" : "current-password"}" value="${authValue("password")}" placeholder="${register ? "At least 8 characters" : "Your password"}" required><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password">${icon("eye")}</button></div></div>${register ? `<div class="auth-field"><label for="authConfirm">Confirm password</label><div class="password-wrap"><input id="authConfirm" name="confirmPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password" value="${authValue("confirmPassword")}" placeholder="Repeat your password" required><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password">${icon("eye")}</button></div></div>` : ""}<div class="auth-error" id="authError" role="alert" ${state.authError ? "" : "hidden"}>${escapeHtml(state.authError)}</div><button class="button auth-submit" type="submit">${register ? "Create account" : "Log in"} ${icon("chevron-right")}</button></form><p class="auth-terms">By continuing, you agree to keep the community safe and respectful.</p></div></div><div class="auth-aside"><div class="auth-aside-glow"></div><div class="auth-aside-orbit"></div><span class="auth-aside-icon">✦</span><strong>${register ? "Your next chapter starts here." : "Everything you love, in one place."}</strong><span>Experiences, creations, and your people — all saved to your account.</span></div></div>`;
     state.authTransitionDirection = "";
     bindAuthEvents();
   }
@@ -628,7 +650,7 @@
       } catch (error) {
         state.authBusy = false;
         state.authReady = true;
-        state.authError = "Firebase could not initialize. Check the Realtime Database URL and authorized domains.";
+        state.authError = firebaseAuthMessage(error) || "Firebase could not initialize. Check the Realtime Database URL, authorized domains, and Email/Password provider.";
         renderAuth();
       }
       return;
@@ -1446,3 +1468,4 @@
   searchInput.value = state.search;
   boot();
 })();
+
