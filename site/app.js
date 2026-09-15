@@ -459,6 +459,7 @@
       "auth/weak-password": "Choose a stronger password of at least 8 characters.",
       "auth/invalid-email": "That username could not be converted into a valid Firebase identifier.",
       "auth/operation-not-allowed": "Firebase Email/Password sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method.",
+      "auth/configuration-not-found": "Firebase Authentication is not configured for this web app. Initialize Authentication, enable Email/Password, and verify the Web API key belongs to playground-bittuhere.",
       "auth/unauthorized-domain": "This hosted domain is not authorized in Firebase Authentication settings.",
       "auth/network-request-failed": "Firebase could not reach the network. Check the connection and try again.",
       "auth/too-many-requests": "Too many attempts. Please wait and try again.",
